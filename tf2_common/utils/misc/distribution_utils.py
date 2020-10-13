@@ -132,6 +132,21 @@ def get_distribution_strategy(distribution_strategy="mirrored",
     return tf.distribute.experimental.TPUStrategy(cluster_resolver)
 
   if distribution_strategy == "multi_worker_mirrored":
+    # Add TF_CONFIG setup for multi-worker distributed strategy
+    import subprocess,json
+    get_cnodes = "echo $(cat {} | sort | uniq | grep -v batch | grep -v login)".format(os.environ['LSB_DJOB_HOSTFILE'])
+    cnodes = subprocess.check_output(get_cnodes, shell=True)
+    cnodes = str(cnodes)[2:-3].split(' ')
+    nodes_list = [c + ":2222" for c in cnodes] # Add a port number
+    index = int(os.environ['OMPI_COMM_WORLD_RANK'])
+    tf_config = os.environ['TF_CONFIG'] = json.dumps({
+      'cluster': {
+          'worker': nodes_list
+      },
+      'task': {'type': 'worker', 'index': index}
+    })
+    print (index, tf_config)
+
     return tf.distribute.experimental.MultiWorkerMirroredStrategy(
         communication=_collective_communication(all_reduce_alg))
 
@@ -154,6 +169,11 @@ def get_distribution_strategy(distribution_strategy="mirrored",
 
   if distribution_strategy == "parameter_server":
     return tf.distribute.experimental.ParameterServerStrategy()
+
+  if distribution_strategy == "horovod":
+    import horovod.tensorflow as hvd
+    hvd.init()
+    return None
 
   raise ValueError(
       "Unrecognized Distribution Strategy: %r" % distribution_strategy)
